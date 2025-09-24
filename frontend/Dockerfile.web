@@ -1,0 +1,16 @@
+# Node 20 for Vite dev server
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install deps once; source is bind-mounted at runtime
+COPY package.json package-lock.json* ./
+RUN if [ -f package-lock.json ]; then npm ci; else npm i; fi
+
+# Useful inside containers on macOS/Windows file systems
+ENV CHOKIDAR_USEPOLLING=true
+
+EXPOSE 5173
+
+# Default will be overridden by compose (npm run dev -- --host ...)
+CMD ["sh","-c","npm -v && node -v && sleep infinity"]

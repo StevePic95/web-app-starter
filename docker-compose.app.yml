@@ -1,0 +1,65 @@
+# docker-compose.app.yml
+services:
+  api:
+    container_name: app-api
+    build:
+      context: ./api
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      auth:
+        condition: service_started
+    environment:
+      # ASP.NET
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      # DB (reuse Supabase Postgres from the base file)
+      ConnectionStrings__Default: Host=db;Port=${POSTGRES_PORT};Database=${POSTGRES_DB};Username=postgres;Password=${POSTGRES_PASSWORD};Include Error Detail=true
+      # Supabase JWT validation in the API
+      SUPABASE_JWKS_URL: http://auth:9999/.well-known/jwks.json
+      SUPABASE_JWT_AUD: authenticated
+      SUPABASE_PROJECT_URL: http://kong:8000
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./api:/src
+      - dotnet_nuget:/root/.nuget/packages
+    working_dir: /src
+    command: ["dotnet", "watch", "run", "--no-restore"]
+
+  web:
+    container_name: app-web
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+      auth:
+        condition: service_started
+      kong:
+        condition: service_started
+    environment:
+      # Vite expects VITE_* to be exposed to the client
+      VITE_SUPABASE_URL: ${SUPABASE_PUBLIC_URL:-http://localhost:${KONG_HTTP_PORT}}
+      VITE_SUPABASE_ANON_KEY: ${ANON_KEY}
+      # Point the SPA to the API container (use host port for the browser)
+      VITE_API_BASE_URL: http://localhost:8080
+      # File watching inside Docker on macOS/Windows
+      CHOKIDAR_USEPOLLING: "true"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - node_modules_cache:/app/node_modules
+    working_dir: /app
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
+
+volumes:
+  dotnet_nuget:
+  node_modules_cache:
